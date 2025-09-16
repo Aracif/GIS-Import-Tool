@@ -1214,7 +1214,8 @@ END";
                     frm.Shown += (s, _) => browser.Navigate(tempPath);
                 }
 
-                frm.ShowDialog(this);
+                // Show modelessly so the main app remains usable while docs are open
+                frm.Show(this);
             }
             catch (Exception ex)
             {
