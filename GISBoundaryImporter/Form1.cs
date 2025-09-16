@@ -24,8 +24,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
         private ProgressBar progressBar;
 
-// GDAL / OSGeo4W selection + path UI
-        private RadioButton rdoGdalMsi;
+// OSGeo4W selection + path UI
         private RadioButton rdoOsgeo4w;
         private TextBox txtOgr2OgrPath;
         private Button btnBrowseOgr;
@@ -33,12 +32,11 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 // Internal mode + selected ogr2ogr path
         private enum GdalMode
         {
-            GdalMsi,
             Osgeo4w,
             Custom
         }
 
-        private GdalMode _gdalMode = GdalMode.GdalMsi;
+        private GdalMode _gdalMode = GdalMode.Osgeo4w;
         private string? _ogr2ogrPath;
 
         public Form1()
@@ -177,20 +175,10 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             // ===== NEW ROW: OGR2OGR / OSGeo4W selection =====
             mainPanel.RowCount += 2; // make sure we have space
 
-            // Row A: radio buttons (GDAL MSI vs OSGeo4W)
+            // Row A: OSGeo4W-only indicator
             mainPanel.Controls.Add(new Label { Text = "OGR Source:", AutoSize = true }, 0, 8);
             var radioPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true };
-            rdoGdalMsi = new RadioButton { Text = "GDAL (MSI)", AutoSize = true, Checked = true };
-            rdoOsgeo4w = new RadioButton { Text = "OSGeo4W", AutoSize = true };
-            rdoGdalMsi.CheckedChanged += (s, e) =>
-            {
-                if (rdoGdalMsi.Checked) _gdalMode = GdalMode.GdalMsi;
-            };
-            rdoOsgeo4w.CheckedChanged += (s, e) =>
-            {
-                if (rdoOsgeo4w.Checked) _gdalMode = GdalMode.Osgeo4w;
-            };
-            radioPanel.Controls.Add(rdoGdalMsi);
+            rdoOsgeo4w = new RadioButton { Text = "OSGeo4W", AutoSize = true, Checked = true, Enabled = false };
             radioPanel.Controls.Add(rdoOsgeo4w);
             mainPanel.Controls.Add(radioPanel, 1, 8);
 
@@ -212,11 +200,8 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
                     {
                         _ogr2ogrPath = ofd.FileName;
                         txtOgr2OgrPath.Text = _ogr2ogrPath;
-                        _gdalMode = _ogr2ogrPath!.IndexOf("OSGeo4W", StringComparison.OrdinalIgnoreCase) >= 0
-                            ? GdalMode.Osgeo4w
-                            : GdalMode.GdalMsi;
-                        rdoOsgeo4w.Checked = (_gdalMode == GdalMode.Osgeo4w);
-                        rdoGdalMsi.Checked = (_gdalMode == GdalMode.GdalMsi);
+                        _gdalMode = GdalMode.Osgeo4w;
+                        rdoOsgeo4w.Checked = true;
                     }
                 }
             };
@@ -227,8 +212,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             // Try to auto-detect ogr2ogr and populate the UI
             EnsureOgr2OgrSelected();
             txtOgr2OgrPath.Text = _ogr2ogrPath ?? "(not found)";
-            rdoOsgeo4w.Checked = (_gdalMode == GdalMode.Osgeo4w);
-            rdoGdalMsi.Checked = (_gdalMode == GdalMode.GdalMsi);
+            rdoOsgeo4w.Checked = true;
             
 
 
@@ -277,17 +261,23 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
         private void CheckGDALInstallation()
         {
-            string gdalPath = @"C:\Program Files\GDAL\ogr2ogr.exe";
-            if (File.Exists(gdalPath))
+            string[] candidates = { @"C:\\OSGeo4W64\\bin\\ogr2ogr.exe", @"C:\\OSGeo4W\\bin\\ogr2ogr.exe" };
+            string? found = null;
+            foreach (var c in candidates)
             {
-                LogMessage("✓ GDAL found at: " + gdalPath);
-                lblStatus.Text = "GDAL Installed";
+                if (File.Exists(c)) { found = c; break; }
+            }
+
+            if (found != null)
+            {
+                LogMessage("✓ OSGeo4W ogr2ogr found at: " + found);
+                lblStatus.Text = "OSGeo4W Installed";
                 lblStatus.ForeColor = Color.Green;
             }
             else
             {
-                LogMessage("✗ GDAL not found. Please install from http://www.gisinternals.com/release.php");
-                lblStatus.Text = "GDAL Not Found - Please Install";
+                LogMessage("✗ OSGeo4W not found. Please install OSGeo4W and ensure ogr2ogr.exe is available.");
+                lblStatus.Text = "OSGeo4W Not Found - Please Install";
                 lblStatus.ForeColor = Color.Red;
             }
         }
@@ -296,19 +286,16 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
         {
             var candidates = new[]
             {
-                // OSGeo4W (newer)
-                @"C:\OSGeo4W\bin\ogr2ogr.exe", @"C:\OSGeo4W64\bin\ogr2ogr.exe",
-                // GDAL MSI (older GISInternals builds)
-                @"C:\Program Files\GDAL\ogr2ogr.exe"
+                // OSGeo4W standard paths
+                @"C:\\OSGeo4W64\\bin\\ogr2ogr.exe",
+                @"C:\\OSGeo4W\\bin\\ogr2ogr.exe"
             };
 
             foreach (var p in candidates)
             {
                 if (File.Exists(p))
                 {
-                    mode = p.IndexOf("OSGeo4W", StringComparison.OrdinalIgnoreCase) >= 0
-                        ? GdalMode.Osgeo4w
-                        : GdalMode.GdalMsi;
+                    mode = GdalMode.Osgeo4w;
                     return p;
                 }
             }
@@ -335,7 +322,7 @@ private ProcessStartInfo BuildOgr2OgrPsi(string arguments)
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             {
                 // Fallbacks if not set
-                path = AutoDetectOgr2Ogr(out _gdalMode) ?? @"C:\Program Files\GDAL\ogr2ogr.exe";
+                path = AutoDetectOgr2Ogr(out _gdalMode) ?? @"C:\\OSGeo4W64\\bin\\ogr2ogr.exe";
             }
 
             var psi = new ProcessStartInfo
@@ -436,7 +423,7 @@ private ProcessStartInfo BuildOgr2OgrPsi(string arguments)
                 {
                     lblStatus.Text = "ogr2ogr.exe not found";
                     lblStatus.ForeColor = Color.Red;
-                    LogMessage("ogr2ogr.exe not found. Browse to it or install GDAL/OSGeo4W.");
+                    LogMessage("ogr2ogr.exe not found. Browse to it or install OSGeo4W.");
                     return;
                 }
 
@@ -923,7 +910,7 @@ private bool ValidateInputsForImport()
 
     if (string.IsNullOrWhiteSpace(_ogr2ogrPath) || !File.Exists(_ogr2ogrPath))
     {
-        errors.Add("ogr2ogr.exe not found. Use Browse… or install GDAL/OSGeo4W.");
+        errors.Add("ogr2ogr.exe not found. Use Browse… or install OSGeo4W.");
     }
 
     // Early exit if we already have errors
