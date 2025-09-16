@@ -664,25 +664,139 @@ private void BtnStep1Import_Click(object? sender, EventArgs e)
             }
         }
 
-        private void BtnTestGeography_Click(object sender, EventArgs e)
+private async void BtnTestGeography_Click(object sender, EventArgs e)
+{
+    if (!ValidateInputs()) return;
+    
+    LogMessage("\n=== Testing Geography ===");
+    lblStatus.Text = "Testing boundary...";
+    lblStatus.ForeColor = Color.Blue;
+
+    try
+    {
+        // Get test coordinates from user
+        string testCoordInside = Microsoft.VisualBasic.Interaction.InputBox(
+            "Enter coordinates INSIDE the boundary\n(Format: latitude,longitude)\nExample: 40.7580,-73.9855", 
+            "Test Inside Coordinates", "");
+
+        string testCoordOutside = Microsoft.VisualBasic.Interaction.InputBox(
+            "Enter coordinates OUTSIDE the boundary\n(Format: latitude,longitude)\nExample: 40.6892,-74.0445", 
+            "Test Outside Coordinates", "");
+
+        if (string.IsNullOrWhiteSpace(testCoordInside) || string.IsNullOrWhiteSpace(testCoordOutside))
         {
-            LogMessage("\n=== Testing Geography ===");
-
-            string testAddressInside = Microsoft.VisualBasic.Interaction.InputBox(
-                "Enter a test address INSIDE the boundary:", "Test Inside Address", "");
-
-            string testAddressOutside = Microsoft.VisualBasic.Interaction.InputBox(
-                "Enter a test address OUTSIDE the boundary:", "Test Outside Address", "");
-
-            LogMessage($"Testing with inside address: {testAddressInside}");
-            LogMessage($"Testing with outside address: {testAddressOutside}");
-            LogMessage("Please test these addresses in your Parks & Rec application:");
-            LogMessage("1. Login as non-admin user");
-            LogMessage("2. Change address to the 'inside' address - should show 'Resident'");
-            LogMessage("3. Change address to the 'outside' address - should show 'Non-Resident'");
-            LogMessage("If results are backwards, use ReorientObject() option and re-run Step 2.");
+            LogMessage("Test cancelled - no coordinates provided");
+            lblStatus.Text = "Test cancelled";
+            lblStatus.ForeColor = Color.Orange;
+            return;
         }
 
+        // Parse coordinates
+        var insideCoords = ParseCoordinates(testCoordInside);
+        var outsideCoords = ParseCoordinates(testCoordOutside);
+
+        if (insideCoords == null || outsideCoords == null)
+        {
+            LogMessage("Invalid coordinate format. Use: latitude,longitude");
+            lblStatus.Text = "Invalid coordinates";
+            lblStatus.ForeColor = Color.Red;
+            return;
+        }
+
+        LogMessage($"Testing INSIDE point: {insideCoords.Value.lat}, {insideCoords.Value.lon}");
+        LogMessage($"Testing OUTSIDE point: {outsideCoords.Value.lat}, {outsideCoords.Value.lon}");
+
+        // Test both points against the boundary
+        using (var conn = new SqlConnection(
+            $"Server={txtServerName.Text};Database={txtTargetDatabase.Text};" +
+            $"Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;"))
+        {
+            await conn.OpenAsync();
+
+            // Test "inside" point
+            bool insideResult = await TestPointInBoundary(conn, insideCoords.Value.lat, insideCoords.Value.lon);
+            LogMessage($"INSIDE point test result: {(insideResult ? "✓ Inside boundary (CORRECT)" : "✗ Outside boundary (INCORRECT)")}");
+
+            // Test "outside" point  
+            bool outsideResult = await TestPointInBoundary(conn, outsideCoords.Value.lat, outsideCoords.Value.lon);
+            LogMessage($"OUTSIDE point test result: {(outsideResult ? "✗ Inside boundary (INCORRECT)" : "✓ Outside boundary (CORRECT)")}");
+
+            // Evaluate results
+            if (insideResult && !outsideResult)
+            {
+                LogMessage("✓✓ BOUNDARY IS CORRECT! Both tests passed.");
+                lblStatus.Text = "Boundary test PASSED";
+                lblStatus.ForeColor = Color.Green;
+            }
+            else if (!insideResult && outsideResult)
+            {
+                LogMessage("⚠️ BOUNDARY IS INVERTED! Results are backwards.");
+                LogMessage("Fix: Select 'ReorientObject()' in Fix Option and re-run Step 2.");
+                lblStatus.Text = "Boundary INVERTED - needs ReorientObject()";
+                lblStatus.ForeColor = Color.Orange;
+                cboFixOption.SelectedIndex = 2; // Auto-select ReorientObject
+            }
+            else
+            {
+                LogMessage("✗ UNEXPECTED RESULTS - Check your boundary data or coordinates.");
+                lblStatus.Text = "Boundary test FAILED";
+                lblStatus.ForeColor = Color.Red;
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        LogMessage($"Error testing geography: {ex.Message}");
+        lblStatus.Text = "Test error";
+        lblStatus.ForeColor = Color.Red;
+    }
+}
+
+private (double lat, double lon)? ParseCoordinates(string coordString)
+{
+    try
+    {
+        var parts = coordString.Trim().Split(',');
+        if (parts.Length != 2) return null;
+        
+        double lat = double.Parse(parts[0].Trim());
+        double lon = double.Parse(parts[1].Trim());
+        
+        // Basic validation
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+            return null;
+            
+        return (lat, lon);
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+private async Task<bool> TestPointInBoundary(SqlConnection conn, double latitude, double longitude)
+{
+    string sql = $@"
+        DECLARE @point geography;
+        SET @point = geography::Point(@lat, @lon, 4326);
+        
+        SELECT CASE 
+            WHEN tenant_boundary.STIntersects(@point) = 1 THEN 1
+            ELSE 0
+        END as IsInside
+        FROM [{txtTargetDatabase.Text}].dbo.tenant
+        WHERE tenant_id = @tenantId";
+
+    using (var cmd = new SqlCommand(sql, conn))
+    {
+        cmd.Parameters.AddWithValue("@lat", latitude);
+        cmd.Parameters.AddWithValue("@lon", longitude);
+        cmd.Parameters.AddWithValue("@tenantId", int.Parse(txtTenantId.Text));
+        
+        var result = await cmd.ExecuteScalarAsync();
+        return result != null && result != DBNull.Value && Convert.ToBoolean(result);
+    }
+}
         private void BtnExportWKT_Click(object sender, EventArgs e)
         {
             if (!ValidateInputs()) return;
