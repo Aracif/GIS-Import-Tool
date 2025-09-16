@@ -1,0 +1,55 @@
+Parks and Rec uses the database tenant.tenant_boundary attribute, of type “geography”, to aid in determining a user’s residency.  When a non-admin user changes any part of their home address, an AWS call determines the address’s latitudinal and longitudinal coordinates.  The code then determines if that point is within the boundaries set by tenant_boundary. Based on that determination, the user’s residency status is set automatically.
+Clients will typically give us their municipal boundary in the form of a Shape File.  This is really a collection of files that will typically be packaged as a zip file.  This document describes the procedure for converting that zip file into a format that our database can accept and loading that file.
+
+Download the zip file and extract it.  The contents should look similar to this:
+
+First, you need to determine the files’ EPSG value.  The tenant_boundary field uses the most common EPSG of 4326.  If your files are not using EPSG:4326, they will need to be converted.  This is very likely to be the case but will be easy to handle later.  
+The easiest way to find the value is to search for EPSG in the *.shp.xml file.  You could also download and install the QGIS application and get the EPSG value by loading the files into it as a layer.  But QGIS is a big heavy download that takes a long time and a complicated application that is not necessary for these purposes.
+Instead, install the command line application GDAL via the GDAL core MSI installer from http://www.gisinternals.com/release.php. I used gdal-304-1930-x64-core.msi
+Set environment variables (I did this through the Windows gui, but you could also do it on the command line):
+setx GDAL_DATA "C:\Program Files\GDAL\gdal-data"
+setx GDAL_DRIVER_PATH "C:\Program Files\GDAL\gdalplugins"
+setx PROJ_LIB "C:\Program Files\GDAL\projlib"
+setx PYTHONPATH "C:\Program Files\GDAL\"
+
+In your local SQL Server, create a temporary database, such as “temp_import”.
+In a Command line window:
+cd C:\Program Files\GDAL
+Set your database driver:
+set driver=SQL Server Native Client 11.0
+Execute the below command with your MSSQL server name, your temp database name, and the path to your extracted shape files.  If your files’ EPSG value happens to be 4326, replace the two -s_srs and -t_srs parameters with a single ‘-a_srs “EPSG:4326”’ parameter.
+ogr2ogr -overwrite -f MSSQLSpatial -lco “GEOM_TYPE=geography” -s_srs "EPSG:<EPSG value>" -t_srs “EPSG:4326” "MSSQL:server=<server name>;database=<database name>;trusted_connection=yes;driver=%driver%" "<path to shape files directory" -FieldTypeToString All
+Example:
+ogr2ogr -overwrite -f MSSQLSpatial -lco “GEOM_TYPE=geography” -s_srs "EPSG:3424" -t_srs “EPSG:4326” "MSSQL:server=LT-0309\SQLEXPRESS;database=temp_import;trusted_connection=yes;driver=%driver%" "C:\Users\tpeterson\Downloads\Chatham" -FieldTypeToString All
+If there is no .shx file, you may be able to create it by first 
+set SHAPE_RESTORE_SHX=YES
+This will create a table in your temp database named after the shape file name and a row in that table that includes the geography data in column “ogr_geometry”.  Even if this data loads successfully, it still may not be valid.  Copy this value to a test area in your local environment for testing.  Here’s an example from my own environment:
+declare @g geography;
+set @g = (select ogr_geometry from temp_import.dbo.chathamtwpnj where ogr_fid = 1)
+update ParksRecClean.dbo.tenant 
+set tenant_boundary = @g where tenant_id = 2;
+Bring up your local ParksRec environment. Login as a non-admin user and go to the Members page.  Change the address to one you know to be within the municipal boundaries (use Google Maps to figure this out).  The user’s residency should be set to Resident.  Change the address you know to be outside the municipal boundaries.  The user’s residency should be set to Non-Resident.
+If, upon testing, you get an error message saying you should make a “MakeValid” call, it probably means that your shape file coordinates were not completely contiguous.  MakeValid can correct this, though it claims the shape may be altered slightly. Reload your data like so:
+declare @g geography;
+set @g = (select ogr_geometry from temp_import.dbo.chathamtwpnj where ogr_fid = 1)
+update ParksRecClean.dbo.tenant 
+set tenant_boundary = @g.MakeValid() where tenant_id = 2;
+If, upon testing, your results seem to be backwards (addresses inside the boundaries result in Non-Residency status and vice versa), your shape file is probably “ringed” incorrectly.  Connecting points are expected to proceed in a counter-clockwise direction to indicate that the space inside them is the space indicated.  If they go clockwise, it indicates that the space outside them is the space indicated, in other words, the whole world except the desired space. This can also be easily fixed with a .ReorientObject() call:
+declare @g geography;
+set @g = (select ogr_geometry from temp_import.dbo.chathamtwpnj where ogr_fid = 1)
+update ParksRecClean.dbo.tenant 
+set tenant_boundary = @g.ReorientObject() where tenant_id = 2;
+Once your data is testing properly, it needs to be converted to “Well Known Text” in order to load it onto another server, such as production.  SQLServer has a .STAsText() method that will do this, but I found that it truncated the value.  Instead, I added the below temporary code to my local GeocodeHelper.VerifyAddress() method and ran another test.  The result writes the WKT to the debug console in Visual Studio:
+string geo = context.Tenant.Where(t => t.tenant_id == TenantId).Select(t => t.tenant_boundary.AsText()).FirstOrDefault();
+System.Diagnostics.Debug.WriteLine("geo: " + geo);
+
+This code is commented out and checked into git at the top of the VerifyAddress() method, for easy uncommenting and reuse.
+You can then insert that value into a sql update statement based on the tenant id you are targeting and this should load your data:
+update tenant set tenant_boundary = ‘<geo value>’ where tenant_id = <tenant_id>;
+Note that if you have QGIS, you can also generate Well Known Text directly from the shape files.  But this won’t do you any good if you have any of the error conditions described above.  If you try to load WKT with the wrong EPSG, SQLServer may give you an error saying your latitude value must be between -90 and 90 degrees.  This is because other EPSGs don’t use latitude and longitude values to describe their coordinates.  If your coordinates are not contiguous or otherwise defective, you may get the MakeValid error message.  If you have the ringing problem, SQLServer will tell you that you can’t load a geography file that spans more than one hemisphere. It seems odd that ogr2ogr is able to load faulty geography data to SQLServer, but straight sql using WTK cannot.  In any case, it’s best to load data via ogr2org, test for and handle these problems, then convert to WTK. 
+
+
+
+
+
+

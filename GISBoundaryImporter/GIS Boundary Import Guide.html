@@ -1,0 +1,302 @@
+﻿<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIS Boundary Import Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        pre, code { font-family: 'Fira Code', monospace; }
+        .code-block { background-color: #0f172a; color: #e2e8f0; border-radius: 0.5rem; padding: 1rem; overflow-x: auto; position: relative; }
+        .sidebar-link.active { background-color: #e0f2fe; color: #0c4a6e; font-weight: 600; }
+        .sidebar-link { display: block; width: 100%; }
+        .content-card { background-color: white; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .token-comment { color: #94a3b8; }
+        .token-variable { color: #e2e8f0; }
+        .token-keyword { color: #7dd3fc; }
+        .token-function { color: #a5b4fc; }
+        .token-punctuation { color: #cbd5e1; }
+        .token-operator { color: #f87171; }
+        .token-number { color: #facc15; }
+        .token-string { color: #a7f3d0; }
+    </style>
+</head>
+<body class="text-slate-800">
+
+<div class="flex">
+    <aside id="sidebar" class="fixed top-0 left-0 h-screen w-64 bg-white border-r border-slate-200 p-6 pt-10 transition-transform -translate-x-full md:translate-x-0 overflow-y-auto">
+        <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Procedure</h2>
+        <nav class="flex flex-col space-y-1">
+            <a href="#overview" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Overview</a>
+            <a href="#prerequisites" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Prerequisites</a>
+            <div class="mt-4 pt-4 border-t border-slate-200">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Steps</h3>
+                <a href="#step1" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">1. Initial Setup</a>
+                <a href="#step2" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">2. Import Shapefile</a>
+                <a href="#step3" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">3. Transfer to Tenant</a>
+                <a href="#step4" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">4. Test Boundary</a>
+                <a href="#step5" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">5. Export to WKT</a>
+            </div>
+            <div class="mt-4 pt-4 border-t border-slate-200">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Troubleshooting</h3>
+                <a href="#common-issues" class="sidebar-link px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Common Issues</a>
+                <a href="#issue-makevalid" class="sidebar-link pl-6 pr-3 py-2 text-sm rounded-md text-slate-500 hover:bg-slate-100 transition-colors">MakeValid()</a>
+                <a href="#issue-reorient" class="sidebar-link pl-6 pr-3 py-2 text-sm rounded-md text-slate-500 hover:bg-slate-100 transition-colors">ReorientObject()</a>
+            </div>
+        </nav>
+    </aside>
+
+    <header class="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 flex items-center px-4 z-20">
+        <button id="menu-toggle" class="p-2 rounded-md text-slate-600 hover:bg-slate-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <h1 class="text-xl font-bold text-slate-900 ml-4">GIS Import Guide</h1>
+    </header>
+
+    <main class="md:ml-64 w-full min-h-screen p-6 md:p-10 pt-20 md:pt-10">
+        <div class="max-w-4xl mx-auto">
+
+            <section id="overview" class="mb-12">
+                <h1 class="text-4xl font-bold text-slate-900 mb-4">GIS Boundary Import Guide</h1>
+                <p class="text-lg text-slate-600 mb-6">
+                    This document outlines the procedure for converting a municipal boundary Shapefile into a usable format and loading it into the Parks & Rec application using the <strong>GIS Boundary Import Tool</strong>.
+                </p>
+                <div class="content-card">
+                    <h3 class="font-semibold text-slate-800 mb-2">The Goal</h3>
+                    <p class="text-sm text-slate-600">
+                        The Parks and Rec application uses a <code>geography</code> data type field in the database, <code>tenant.tenant_boundary</code>, to determine a user's residency status. When a user updates their address, the system checks if their new coordinates fall within this defined boundary to automatically set them as a "Resident" or "Non-Resident". This tool streamlines the process of loading client-provided Shapefiles into that database field.
+                    </p>
+                </div>
+            </section>
+
+            <section id="prerequisites" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Prerequisites</h2>
+                <div class="content-card">
+                    <ul class="text-slate-600 space-y-4">
+                        <li class="flex items-start">
+                            <span class="text-sky-500 mr-3 mt-1">✓</span>
+                            <div>
+                                <h4 class="font-semibold">Shapefile</h4>
+                                A client-provided municipal boundary, typically delivered as a <code>.zip</code> file. You must extract this file to a folder on your local machine. The contents will include files like <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, and, importantly, a <code>.shp.xml</code> file.
+                            </div>
+                        </li>
+                        <li class="flex items-start">
+                            <span class="text-sky-500 mr-3 mt-1">✓</span>
+                            <div>
+                                <h4 class="font-semibold">GDAL or OSGeo4W</h4>
+                                The tool relies on the <code>ogr2ogr.exe</code> command-line utility to perform the conversion. You must have either the GDAL core components or OSGeo4W installed. The tool will attempt to auto-detect the installation.
+                                <ul class="list-disc pl-5 mt-2 text-sm">
+                                    <li><strong>Recommended:</strong> Install GDAL via the core MSI installer from <a href="http://www.gisinternals.com/release.php" target="_blank" class="text-blue-600 hover:underline">gisinternals.com</a>.</li>
+                                    <li><strong>Alternative:</strong> Install via the OSGeo4W installer.</li>
+                                </ul>
+                                <p class="text-xs text-slate-500 mt-2">Unlike the legacy process, you do not need to manually set any environment variables; the tool handles this automatically.</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="step1" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Step 1: Initial Setup</h2>
+                <div class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Configure Connections and Paths</h3>
+                    <p class="text-slate-600 mb-4">
+                        Launch the <strong>Parks & Rec GIS Boundary Import Tool</strong> and fill out the configuration fields.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-4 text-slate-600">
+                        <li>
+                            <strong>SQL Server Configuration:</strong>
+                            <ul class="list-disc pl-8 mt-2 space-y-1 text-sm">
+                                <li><code>SQL Server Name</code>: Enter the name of your local SQL Server instance (e.g., <code>MY-PC\SQLEXPRESS</code>).</li>
+                                <li><code>Temp Database</code>: Name for a temporary database where the data will first be loaded (e.g., <code>temp_import</code>). The tool will create this if it doesn't exist.</li>
+                                <li><code>Target Database</code>: The name of your Parks & Rec application database (e.g., <code>ParksRecApp</code>).</li>
+                                <li><code>Tenant ID</code>: The specific ID for the tenant whose boundary you are updating.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>OGR Source:</strong>
+                            <p class="text-sm mt-1">The tool auto-detects standard GDAL/OSGeo4W installations. If the <code>ogr2ogr.exe</code> path is not found, use the <strong>Browse...</strong> button to locate it manually. Click <strong>Check GDAL</strong> to verify that the executable is found and that the required <code>MSSQLSpatial</code> driver is available.</p>
+                        </li>
+                        <li>
+                            <strong>Shapefile Path:</strong>
+                            <p class="text-sm mt-1">Click the <strong>Browse...</strong> button next to "Shape File Path" and select the <strong><code>.shp.xml</code></strong> file from your extracted files. The tool will automatically read this file to detect the EPSG code.</p>
+                            <div class="mt-3 p-4 bg-sky-50 border border-sky-200 rounded-lg">
+                                <p class="text-sm text-sky-800">
+                                    <strong>What is EPSG?</strong> The <code>tenant_boundary</code> field requires coordinates in the EPSG:4326 format, which uses latitude and longitude. Your source files might use a different coordinate system (a different EPSG code). The tool handles this conversion for you automatically during the import process.
+                                </p>
+                            </div>
+                        </li>
+                        <li>
+                            <strong>Test Connections:</strong>
+                            <p class="text-sm mt-1">Click the <strong>Test DB Connection</strong> button to ensure the tool can communicate with your SQL server and databases before proceeding.</p>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+
+            <section id="step2" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Step 2: Import Shapefile to Temp DB</h2>
+                <div class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Load the Data</h3>
+                    <p class="text-slate-600 mb-4">
+                        This step uses <code>ogr2ogr.exe</code> behind the scenes to convert the Shapefile and load it into a table (named <code>ogr_import</code>) inside your temporary database.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-4 text-slate-600">
+                        <li>Verify all the settings from Step 1 are correct.</li>
+                        <li>Click the green <strong>Step 1: Import Shape</strong> button.</li>
+                        <li>Monitor the log panel at the bottom of the tool. A successful import will show progress and end with a "Shapefile imported to temp DB" message.</li>
+                    </ol>
+                    <div class="code-block mt-4">
+                        <pre><code><span class="token-comment">[10:30:01] Running: ogr2ogr -overwrite -f MSSQLSpatial "MSSQL:server=...</span>
+<span class="token-comment">[10:30:05] Output: </span>
+<span class="token-comment">[10:30:05] ✓ Shapefile imported to temp DB</span></code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="step3" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Step 3: Transfer to Tenant Table</h2>
+                <div class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Move and Fix the Data</h3>
+                    <p class="text-slate-600 mb-4">
+                        Now, you'll transfer the geography data from the temporary table to the final destination: the <code>tenant_boundary</code> column for your target tenant. This step also allows you to apply common fixes if the raw data is invalid.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-4 text-slate-600">
+                        <li>
+                            <strong>Select a Fix Option:</strong>
+                            <p class="text-sm mt-1">Start with the default option, <strong>None</strong>. You will only use the other options if you encounter errors or incorrect behavior during testing. (See <a href="#common-issues" class="text-blue-600 hover:underline">Common Issues</a> below).</p>
+                        </li>
+                        <li>Click the <strong>Step 2: Transfer to Tenant</strong> button.</li>
+                        <li>The tool will prompt for the source table name. The default is <code>ogr_import</code>, which is correct. Click OK.</li>
+                        <li>The log will show the SQL command being executed and a success message indicating rows were updated.</li>
+                    </ol>
+                </div>
+            </section>
+
+            <section id="step4" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Step 4: Test the Boundary</h2>
+                <div class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Verify in the Application</h3>
+                    <p class="text-slate-600 mb-4">
+                        You must now manually test in your local Parks & Rec web application to confirm the boundary is working as expected. You can use the <strong>Test Geography</strong> button in the tool for guided instructions.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-4 text-slate-600">
+                        <li>Log in to your local Parks & Rec application as a non-admin user.</li>
+                        <li>Navigate to the user's profile or members page.</li>
+                        <li>Change the user's address to a location you know is <strong>inside</strong> the municipal boundary.</li>
+                        <li>After the address update, verify that the user's residency status automatically changes to <strong>Resident</strong>.</li>
+                        <li>Change the user's address to a location you know is <strong>outside</strong> the municipal boundary.</li>
+                        <li>Verify that the user's residency status automatically changes to <strong>Non-Resident</strong>.</li>
+                    </ol>
+                    <div class="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p class="text-sm text-amber-800">
+                            <strong>⚠️ Important:</strong> If the residency test results are backward (inside addresses show as Non-Resident), you have a "ring orientation" problem. See the <a href="#issue-reorient" class="text-blue-600 hover:underline">ReorientObject()</a> section below for the fix.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="step5" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Step 5: Export to Well-Known Text (WKT)</h2>
+                <div class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Create a Deployment Script</h3>
+                    <p class="text-slate-600 mb-4">
+                        Once you have confirmed the boundary is correct, you need to create a SQL script to deploy it to other environments (e.g., staging or production). This is done by converting the geography data into a format called "Well-Known Text" (WKT).
+                    </p>
+                    <ol class="list-decimal list-inside space-y-4 text-slate-600">
+                        <li>Click the <strong>Export to WKT</strong> button.</li>
+                        <li>A "Save File" dialog will appear. Save the <code>.sql</code> file to your machine.</li>
+                        <li>This generated SQL file contains a complete <code>UPDATE</code> statement that can be run on any other server to apply the exact same boundary.</li>
+                    </ol>
+                    <div class="code-block mt-4">
+                        <pre><code><span class="token-keyword">UPDATE</span> <span class="token-variable">tenant</span> <span class="token-keyword">SET</span> <span class="token-variable">tenant_boundary</span> <span class="token-operator">=</span> <span class="token-string">'POLYGON ((...))'</span> <span class="token-keyword">WHERE</span> <span class="token-variable">tenant_id</span> <span class="token-operator">=</span> <span class="token-number">2</span><span class="token-punctuation">;</span></code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="common-issues" class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 border-b pb-2 mb-6">Common Issues & Fixes</h2>
+
+                <div id="issue-makevalid" class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Issue: Invalid Geometry or "MakeValid" Errors</h3>
+                    <p class="text-slate-600">
+                        Sometimes the Shapefile data isn't perfectly "clean." For example, the start and end points of the polygon boundary might not be identical, or lines might cross over each other. This can cause SQL Server to reject the data during the transfer in Step 3.
+                    </p>
+                    <h4 class="text-md font-semibold text-slate-700 mt-4 mb-2">Solution</h4>
+                    <p class="text-slate-600">
+                        The <code>MakeValid()</code> function is a built-in SQL Server tool that can often repair these minor geometry issues.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-2 mt-3 text-slate-600">
+                        <li>In the <strong>Fix Option</strong> dropdown, select <strong>MakeValid()</strong>.</li>
+                        <li>Re-run <strong>Step 2: Transfer to Tenant</strong>.</li>
+                        <li>Proceed with testing.</li>
+                    </ol>
+                </div>
+
+                <div id="issue-reorient" class="content-card">
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Issue: Residency Test is Backwards</h3>
+                    <p class="text-slate-600">
+                        If addresses inside the boundary show as "Non-Resident" and vice-versa, the polygon's "ring orientation" is incorrect. A polygon's points must be listed in a counter-clockwise order to define the area *inside*. If they are clockwise, the database assumes you mean the entire rest of the world *except* for your municipality. This can also cause errors about a geography spanning more than one hemisphere.
+                    </p>
+                    <h4 class="text-md font-semibold text-slate-700 mt-4 mb-2">Solution</h4>
+                    <p class="text-slate-600">
+                        The <code>ReorientObject()</code> function reverses the order of the points, fixing the orientation.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-2 mt-3 text-slate-600">
+                        <li>In the <strong>Fix Option</strong> dropdown, select <strong>ReorientObject()</strong>.</li>
+                        <li>Re-run <strong>Step 2: Transfer to Tenant</strong>.</li>
+                        <li>Re-test in the application. The residency status should now be correct.</li>
+                    </ol>
+                </div>
+            </section>
+
+        </div>
+    </main>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const menuToggle = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+        if (menuToggle && sidebar) {
+            menuToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('-translate-x-full');
+            });
+        }
+
+        const sections = document.querySelectorAll('section, .content-card[id]');
+        const sidebarLinks = document.querySelectorAll('.sidebar-link');
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    let activeId = entry.target.id;
+                    sidebarLinks.forEach(link => {
+                        link.classList.remove('active');
+                        if (link.getAttribute('href').substring(1) === activeId) {
+                            link.classList.add('active');
+                        }
+                    });
+                }
+            });
+        }, { rootMargin: "-40% 0px -60% 0px" });
+
+        sections.forEach(section => {
+            observer.observe(section);
+        });
+
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                if (sidebar && !sidebar.classList.contains('-translate-x-full') && window.innerWidth < 768) {
+                    sidebar.classList.add('-translate-x-full');
+                }
+            });
+        });
+    });
+</script>
+</body>
+</html>

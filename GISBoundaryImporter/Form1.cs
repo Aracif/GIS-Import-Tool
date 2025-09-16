@@ -485,9 +485,10 @@ private void BtnStep1Import_Click(object? sender, EventArgs e)
 {
     try
     {
+        EnsureTempDatabase();
+
         if (!ValidateInputsForImport()) return;
 
-        EnsureTempDatabase();
 
         progressBar.Value = 10;
         EnsureOgr2OgrSelected();
