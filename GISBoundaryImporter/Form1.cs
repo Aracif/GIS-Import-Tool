@@ -53,7 +53,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
             var mainPanel = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 12, Padding = new Padding(10)
+                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 16, Padding = new Padding(10)
             };
 
             
@@ -80,6 +80,11 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             txtTargetDatabase = new TextBox { Width = 250, Text = "parksrec" };
             mainPanel.Controls.Add(txtTargetDatabase, 1, 3);
 
+            // Place Test DB Connection near DB inputs
+            btnTestDb = new Button { Text = "Test DB Connection", Width = 150, Height = 30 };
+            btnTestDb.Click += BtnTestDb_Click;
+            mainPanel.Controls.Add(btnTestDb, 2, 3);
+
             mainPanel.Controls.Add(new Label { Text = "Tenant ID:", AutoSize = true }, 0, 4);
             txtTenantId = new TextBox { Width = 100 };
             mainPanel.Controls.Add(txtTenantId, 1, 4);
@@ -102,60 +107,81 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             cboFixOption.SelectedIndex = 0;
             mainPanel.Controls.Add(cboFixOption, 1, 7);
 
-            // Action Buttons
-            var buttonPanel = new FlowLayoutPanel
+            // Grouped action areas with uniform button styling
+            Size uniformButtonSize = new Size(160, 32);
+            Padding uniformButtonMargin = new Padding(6, 6, 6, 6);
+
+            // Steps Group
+            var gbSteps = new GroupBox { Text = "Steps", Dock = DockStyle.Top, AutoSize = true };
+            var stepsPanel = new FlowLayoutPanel
             {
-                Name = "buttonPanel",
-                Dock = DockStyle.Top,              // or DockStyle.Fill if the panel should own the area
-                Height = 120,                      // pick a sensible height for two rows of buttons
-                AutoScroll = true,                 // adds scrollbars if needed
-                WrapContents = true,               // <— enables wrapping
                 FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = true,
                 Padding = new Padding(8),
                 Margin = new Padding(0)
             };
-// If your form resizes, let the panel stretch horizontally:
-            buttonPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-            btnCheckGDAL = new Button { Text = "Check GDAL", Width = 100, Height = 30, BackColor = Color.LightBlue };
-            btnCheckGDAL.Click += BtnCheckGDAL_Click;
-            buttonPanel.Controls.Add(btnCheckGDAL);
-
-            btnStep1Import = new Button
-            {
-                Text = "Step 1: Import Shape", Width = 130, Height = 30, BackColor = Color.LightGreen
-            };
+            btnStep1Import = new Button { Text = "Step 1: Import Shape" };
+            btnStep1Import.Size = uniformButtonSize;
+            btnStep1Import.Margin = uniformButtonMargin;
+            btnStep1Import.FlatStyle = FlatStyle.System;
             btnStep1Import.Click += BtnStep1Import_Click;
-            buttonPanel.Controls.Add(btnStep1Import);
-            btnTestDb = new Button { Text = "Test DB Connection", Width = 150, Height = 30, BackColor = Color.LightSkyBlue };
-            btnTestDb.Click += BtnTestDb_Click;
-            buttonPanel.Controls.Add(btnTestDb);
-            btnStep2Transfer = new Button
-            {
-                Text = "Step 2: Transfer to Tenant", Width = 150, Height = 30, BackColor = Color.LightGreen
-            };
+            stepsPanel.Controls.Add(btnStep1Import);
+
+            btnStep2Transfer = new Button { Text = "Step 2: Transfer to Tenant" };
+            btnStep2Transfer.Size = uniformButtonSize;
+            btnStep2Transfer.Margin = uniformButtonMargin;
+            btnStep2Transfer.FlatStyle = FlatStyle.System;
             btnStep2Transfer.Click += BtnStep2Transfer_Click;
-            buttonPanel.Controls.Add(btnStep2Transfer);
+            stepsPanel.Controls.Add(btnStep2Transfer);
 
-            btnTestGeography =
-                new Button { Text = "Test Geography", Width = 110, Height = 30, BackColor = Color.Yellow };
+            gbSteps.Controls.Add(stepsPanel);
+            mainPanel.Controls.Add(gbSteps, 0, 10);
+            mainPanel.SetColumnSpan(gbSteps, 3);
+
+            // Tools Group
+            var gbTools = new GroupBox { Text = "Tools", Dock = DockStyle.Top, AutoSize = true };
+            var toolsPanel = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = true,
+                Padding = new Padding(8),
+                Margin = new Padding(0)
+            };
+
+            btnCheckGDAL = new Button { Text = "Check GDAL" };
+            btnCheckGDAL.Size = uniformButtonSize;
+            btnCheckGDAL.Margin = uniformButtonMargin;
+            btnCheckGDAL.FlatStyle = FlatStyle.System;
+            btnCheckGDAL.Click += BtnCheckGDAL_Click;
+            toolsPanel.Controls.Add(btnCheckGDAL);
+
+            btnTestGeography = new Button { Text = "Test Geography" };
+            btnTestGeography.Size = uniformButtonSize;
+            btnTestGeography.Margin = uniformButtonMargin;
+            btnTestGeography.FlatStyle = FlatStyle.System;
             btnTestGeography.Click += BtnTestGeography_Click;
-            buttonPanel.Controls.Add(btnTestGeography);
+            toolsPanel.Controls.Add(btnTestGeography);
 
-            btnExportWKT = new Button { Text = "Export to WKT", Width = 100, Height = 30, BackColor = Color.Orange };
+            btnExportWKT = new Button { Text = "Export to WKT" };
+            btnExportWKT.Size = uniformButtonSize;
+            btnExportWKT.Margin = uniformButtonMargin;
+            btnExportWKT.FlatStyle = FlatStyle.System;
             btnExportWKT.Click += BtnExportWKT_Click;
-            buttonPanel.Controls.Add(btnExportWKT);
+            toolsPanel.Controls.Add(btnExportWKT);
 
-            mainPanel.Controls.Add(buttonPanel, 0, 8);
-            mainPanel.SetColumnSpan(buttonPanel, 3);
+            gbTools.Controls.Add(toolsPanel);
+            mainPanel.Controls.Add(gbTools, 0, 11);
+            mainPanel.SetColumnSpan(gbTools, 3);
 
             // Status
             lblStatus = new Label { Text = "Ready", AutoSize = true, ForeColor = Color.Green };
-            mainPanel.Controls.Add(lblStatus, 0, 9);
+            mainPanel.Controls.Add(lblStatus, 0, 12);
             mainPanel.SetColumnSpan(lblStatus, 3);
 
             progressBar = new ProgressBar { Width = 750, Height = 20 };
-            mainPanel.Controls.Add(progressBar, 0, 10);
+            mainPanel.Controls.Add(progressBar, 0, 13);
             mainPanel.SetColumnSpan(progressBar, 3);
 
             // Log output
@@ -167,13 +193,12 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
                 Height = 200,
                 Font = new Font("Consolas", 9)
             };
-            mainPanel.Controls.Add(txtLog, 0, 11);
+            mainPanel.Controls.Add(txtLog, 0, 14);
             mainPanel.SetColumnSpan(txtLog, 3);
 
             mainPanel.Controls.Add(lblTitle, 0, 0);
 
             // ===== NEW ROW: OGR2OGR / OSGeo4W selection =====
-            mainPanel.RowCount += 2; // make sure we have space
 
             // Row A: OSGeo4W-only indicator
             mainPanel.Controls.Add(new Label { Text = "OGR Source:", AutoSize = true }, 0, 8);
