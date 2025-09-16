@@ -247,7 +247,9 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
             // Create right-side host for Test Geography panel (hidden by default)
             pnlTestGeoHost = new Panel { Dock = DockStyle.Right, Width = 300, BorderStyle = BorderStyle.FixedSingle, Visible = false };
+            pnlTestGeoHost.AutoScroll = true; // allow scrolling to reach the preview area
             testGeoPanel = new TestGeographyPanel();
+            testGeoPanel.Dock = DockStyle.Fill; // fill host panel
             // Wire event for test requests
             testGeoPanel.TestRequested += async (s, args) => await HandleTestRequestedAsync(args);
             testGeoPanel.HideRequested += (s, e) =>
@@ -787,6 +789,32 @@ private async Task<bool> TestPointInBoundary(SqlConnection conn, double latitude
                     {
                         string wkt = result.ToString();
 
+                        // Immediately push WKT to the Test Geography preview
+                        try
+                        {
+                            if (testGeoPanel == null)
+                            {
+                                testGeoPanel = new TestGeographyPanel();
+                                testGeoPanel.TestRequested += async (s, args) => await HandleTestRequestedAsync(args);
+                                testGeoPanel.HideRequested += (s, e2) =>
+                                {
+                                    pnlTestGeoHost.Visible = false;
+                                    LogMessage("=== Test Geography Panel Hidden ===");
+                                    lblStatus.Text = "Ready";
+                                    lblStatus.ForeColor = Color.Green;
+                                };
+                                pnlTestGeoHost.Controls.Clear();
+                                pnlTestGeoHost.Controls.Add(testGeoPanel);
+                            }
+                            pnlTestGeoHost.Visible = true;
+                            testGeoPanel.SetBoundaryWkt(wkt);
+                            LogMessage("✓ Boundary preview updated from WKT.");
+                        }
+                        catch (Exception exPrev)
+                        {
+                            LogMessage($"Could not update preview from WKT: {exPrev.Message}");
+                        }
+
                         // Save to file
                         var saveDialog = new SaveFileDialog
                         {
@@ -1032,6 +1060,21 @@ END";
                         lblStatus.Text = panelSummary;
                         lblStatus.ForeColor = Color.Red;
                         testGeoPanel?.SetResult(panelSummary, isError: true);
+                    }
+
+                    // Fetch and display boundary WKT in panel preview
+                    try
+                    {
+                        using var cmd = new SqlCommand($"SELECT tenant_boundary.STAsText() FROM [{txtTargetDatabase.Text}].dbo.tenant WHERE tenant_id = @tid", conn);
+                        cmd.Parameters.AddWithValue("@tid", int.Parse(txtTenantId.Text));
+                        var wktObj = await cmd.ExecuteScalarAsync();
+                        string? wkt = (wktObj == null || wktObj == DBNull.Value) ? null : wktObj.ToString();
+                        testGeoPanel?.SetBoundaryWkt(wkt);
+                    }
+                    catch (Exception exWkt)
+                    {
+                        LogMessage($"Could not load boundary WKT: {exWkt.Message}");
+                        testGeoPanel?.SetBoundaryWkt(null);
                     }
                 }
             }

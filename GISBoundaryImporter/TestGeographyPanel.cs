@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace GISBoundaryImporter
@@ -24,6 +25,11 @@ namespace GISBoundaryImporter
         private Label lblHeader;
         private Label lblResult;
 
+        // Boundary drawing
+        private PictureBox picBoundary;
+        private List<List<PointF>> _polygons = new List<List<PointF>>();
+        private string? _noBoundaryMessage = "No boundary loaded.";
+
         public event EventHandler<TestRequestedEventArgs>? TestRequested;
         public event EventHandler? HideRequested;
 
@@ -40,7 +46,7 @@ namespace GISBoundaryImporter
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 10,
+                RowCount = 20,
                 Padding = new Padding(8),
                 AutoSize = true
             };
@@ -123,7 +129,7 @@ namespace GISBoundaryImporter
             layout.SetColumnSpan(lblResult, 2);
 
             layout.Controls.Add(new Label { Text = "History:", AutoSize = true, Margin = new Padding(0, 6, 0, 0) }, 0, 11);
-            lstHistory = new ListBox { Dock = DockStyle.Fill, Height = 200 };
+            lstHistory = new ListBox { Dock = DockStyle.Fill, Height = 150 };
             // Enable owner-draw to allow coloring successful items
             lstHistory.DrawMode = DrawMode.OwnerDrawFixed;
             lstHistory.DrawItem += LstHistory_DrawItem;
@@ -134,11 +140,221 @@ namespace GISBoundaryImporter
             btnUseSelected.Click += (s, e) => UseSelectedHistory();
             layout.Controls.Add(btnUseSelected, 1, 13);
 
+            // Boundary preview
+            layout.Controls.Add(new Label { Text = "Boundary Preview:", AutoSize = true, Margin = new Padding(0, 6, 0, 0) }, 0, 14);
+            picBoundary = new PictureBox { Dock = DockStyle.Fill, Height = 180, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            picBoundary.Paint += PicBoundary_Paint;
+            layout.Controls.Add(picBoundary, 0, 15);
+            layout.SetColumnSpan(picBoundary, 2);
+
             this.Controls.Add(layout);
 
             // Initialize input mode (default: separate fields enabled)
             chkSingleField.Checked = false;
             ToggleInputMode();
+        }
+
+        private void PicBoundary_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var rect = picBoundary.ClientRectangle;
+            g.Clear(picBoundary.BackColor);
+
+            if (_polygons == null || _polygons.Count == 0)
+            {
+                using var br = new SolidBrush(Color.Gray);
+                var text = _noBoundaryMessage ?? "No boundary loaded.";
+                g.DrawString(text, this.Font, br, new PointF(6, 6));
+                return;
+            }
+
+            // Compute bounds
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var poly in _polygons)
+            {
+                foreach (var p in poly)
+                {
+                    if (p.X < minX) minX = p.X;
+                    if (p.X > maxX) maxX = p.X;
+                    if (p.Y < minY) minY = p.Y;
+                    if (p.Y > maxY) maxY = p.Y;
+                }
+            }
+
+            float pad = 10f;
+            float availW = Math.Max(1f, rect.Width - 2 * pad);
+            float availH = Math.Max(1f, rect.Height - 2 * pad);
+            float srcW = Math.Max(1e-6f, maxX - minX);
+            float srcH = Math.Max(1e-6f, maxY - minY);
+            float scale = Math.Min(availW / srcW, availH / srcH);
+
+            // Map function (lon->X, lat->Y with Y inverted)
+            PointF Map(PointF pt)
+            {
+                float x = pad + (pt.X - minX) * scale;
+                float y = pad + (maxY - pt.Y) * scale; // invert Y to have north up
+                return new PointF(x, y);
+            }
+
+            using var pen = new Pen(Color.RoyalBlue, 2f);
+            using var fill = new SolidBrush(Color.FromArgb(40, Color.RoyalBlue));
+
+            foreach (var poly in _polygons)
+            {
+                if (poly.Count >= 3)
+                {
+                    var pts = poly.Select(Map).ToArray();
+                    g.FillPolygon(fill, pts);
+                    g.DrawPolygon(pen, pts);
+                }
+            }
+        }
+
+        public void SetBoundaryWkt(string? wkt)
+        {
+            _polygons.Clear();
+            if (string.IsNullOrWhiteSpace(wkt))
+            {
+                _noBoundaryMessage = "No boundary found for this tenant.";
+                picBoundary?.Invalidate();
+                return;
+            }
+
+            // Normalize common variants like "SRID=4326;MULTIPOLYGON(...)" and handle EMPTY
+            wkt = wkt.Trim();
+            if (wkt.StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
+            {
+                int idx = wkt.IndexOf(';');
+                if (idx >= 0 && idx + 1 < wkt.Length)
+                    wkt = wkt.Substring(idx + 1).Trim();
+            }
+            if (wkt.EndsWith("EMPTY", StringComparison.OrdinalIgnoreCase))
+            {
+                _noBoundaryMessage = "Boundary is EMPTY.";
+                picBoundary?.Invalidate();
+                return;
+            }
+
+            try
+            {
+                var parsed = ParseWktPolygons(wkt);
+                if (parsed.Count == 0)
+                {
+                    _noBoundaryMessage = "Boundary WKT parsed to 0 polygons.";
+                }
+                _polygons = parsed;
+            }
+            catch (Exception ex)
+            {
+                _noBoundaryMessage = "Failed to parse WKT: " + ex.Message;
+            }
+
+            picBoundary?.Invalidate();
+        }
+
+        private static List<List<PointF>> ParseWktPolygons(string wkt)
+        {
+            // Basic support for POLYGON and MULTIPOLYGON. We parse only outer rings.
+            wkt = wkt.Trim();
+            var result = new List<List<PointF>>();
+
+            if (wkt.StartsWith("POLYGON", StringComparison.OrdinalIgnoreCase))
+            {
+                var rings = ExtractRings(wkt);
+                if (rings.Count > 0)
+                    result.Add(ParseRing(rings[0]));
+            }
+            else if (wkt.StartsWith("MULTIPOLYGON", StringComparison.OrdinalIgnoreCase))
+            {
+                var polys = ExtractPolygonsFromMulti(wkt);
+                foreach (var polyText in polys)
+                {
+                    var rings = ExtractRings("POLYGON " + polyText);
+                    if (rings.Count > 0)
+                        result.Add(ParseRing(rings[0]));
+                }
+            }
+            else if (wkt.StartsWith("GEOMETRYCOLLECTION", StringComparison.OrdinalIgnoreCase))
+            {
+                // naive: try to find contained POLYGONs
+                var matches = Regex.Matches(wkt, "POLYGON\\s*\\(\\((?:[^()]*|\\([^()]*\\))*\\)\\)", RegexOptions.IgnoreCase);
+                foreach (Match m in matches)
+                {
+                    var rings = ExtractRings(m.Value);
+                    if (rings.Count > 0)
+                        result.Add(ParseRing(rings[0]));
+                }
+            }
+
+            return result;
+        }
+
+        private static List<string> ExtractRings(string polygonWkt)
+        {
+            // expects input starting with POLYGON and containing ((outer),(hole1),...))
+            int start = polygonWkt.IndexOf("((", StringComparison.Ordinal);
+            int end = polygonWkt.LastIndexOf("))", StringComparison.Ordinal);
+            if (start < 0 || end <= start) return new List<string>();
+            string inner = polygonWkt.Substring(start + 2, end - (start + 2)); // content between the double parentheses
+
+            // Split rings by "),("
+            var rings = inner.Split(new[] { "),(" }, StringSplitOptions.None)
+                             .Select(r => r.Trim(' ', '(', ')'))
+                             .Where(r => r.Length > 0)
+                             .ToList();
+            return rings;
+        }
+
+        private static List<string> ExtractPolygonsFromMulti(string multiWkt)
+        {
+            // input starts with MULTIPOLYGON
+            int kw = multiWkt.IndexOf("MULTIPOLYGON", StringComparison.OrdinalIgnoreCase);
+            int start = multiWkt.IndexOf('(', kw >= 0 ? kw : 0);
+            int end = multiWkt.LastIndexOf(')');
+            if (start < 0 || end <= start) return new List<string>();
+            string inner = multiWkt.Substring(start + 1, end - start - 1).Trim(); // content inside MULTIPOLYGON(...)
+
+            var polys = new List<string>();
+            int depth = 0;
+            int segStart = 0;
+            for (int i = 0; i < inner.Length; i++)
+            {
+                char c = inner[i];
+                if (c == '(') depth++;
+                else if (c == ')') depth--;
+                else if (c == ',' && depth == 0)
+                {
+                    // split between polygons
+                    string seg = inner.Substring(segStart, i - segStart).Trim();
+                    if (seg.Length > 0) polys.Add(seg);
+                    segStart = i + 1;
+                }
+            }
+            // add last segment
+            string last = inner.Substring(segStart).Trim();
+            if (last.Length > 0) polys.Add(last);
+
+            // Ensure each returned segment remains in ((...)) form
+            return polys;
+        }
+
+        private static List<PointF> ParseRing(string ringText)
+        {
+            // Coordinates are typically in "lon lat" order for WKT from SQL Server geography
+            var pts = new List<PointF>();
+            var parts = ringText.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var coords = part.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (coords.Length >= 2 &&
+                    float.TryParse(coords[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float lon) &&
+                    float.TryParse(coords[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float lat))
+                {
+                    pts.Add(new PointF(lon, lat));
+                }
+            }
+            return pts;
         }
 
         private void ToggleInputMode()
