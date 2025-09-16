@@ -103,6 +103,9 @@ namespace GISBoundaryImporter
 
             layout.Controls.Add(new Label { Text = "History:", AutoSize = true, Margin = new Padding(0, 6, 0, 0) }, 0, 11);
             lstHistory = new ListBox { Dock = DockStyle.Fill, Height = 200 };
+            // Enable owner-draw to allow coloring successful items
+            lstHistory.DrawMode = DrawMode.OwnerDrawFixed;
+            lstHistory.DrawItem += LstHistory_DrawItem;
             layout.Controls.Add(lstHistory, 0, 12);
             layout.SetColumnSpan(lstHistory, 2);
 
@@ -137,7 +140,45 @@ namespace GISBoundaryImporter
                 txtInsideLon.Text = cp.Inside.lon.ToString();
                 txtOutsideLat.Text = cp.Outside.lat.ToString();
                 txtOutsideLon.Text = cp.Outside.lon.ToString();
+
+                // Also update single-input pair boxes
+                if (txtInsidePair != null) txtInsidePair.Text = $"{cp.Inside.lat},{cp.Inside.lon}";
+                if (txtOutsidePair != null) txtOutsidePair.Text = $"{cp.Outside.lat},{cp.Outside.lon}";
             }
+        }
+
+        // Mark the most recently added history item as success/failure
+        public void MarkLastHistorySuccess(bool success)
+        {
+            if (lstHistory.Items.Count > 0 && lstHistory.Items[0] is CoordinatePair cp)
+            {
+                cp.Success = success;
+                // Refresh to redraw colors
+                lstHistory.Invalidate();
+            }
+        }
+
+        // Owner-draw to color successful items green
+        private void LstHistory_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index >= 0 && e.Index < lstHistory.Items.Count)
+            {
+                var item = lstHistory.Items[e.Index];
+                string text = item?.ToString() ?? string.Empty;
+                Color foreColor = e.ForeColor;
+
+                if (item is CoordinatePair cp && cp.Success == true)
+                {
+                    foreColor = Color.Green;
+                }
+
+                using (var br = new SolidBrush(foreColor))
+                {
+                    e.Graphics.DrawString(text, e.Font, br, e.Bounds);
+                }
+            }
+            e.DrawFocusRectangle();
         }
 
         private bool TryGetInputs(out (double lat, double lon)? inside, out (double lat, double lon)? outside, out string? error)
@@ -228,6 +269,7 @@ namespace GISBoundaryImporter
 
         public record CoordinatePair((double lat, double lon) Inside, (double lat, double lon) Outside)
         {
+            public bool? Success { get; set; }
             public override string ToString()
             {
                 return $"Inside: {Inside.lat},{Inside.lon} | Outside: {Outside.lat},{Outside.lon}";

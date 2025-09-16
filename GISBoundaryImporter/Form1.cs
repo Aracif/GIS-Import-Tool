@@ -1016,6 +1016,7 @@ END";
                         lblStatus.Text = panelSummary;
                         lblStatus.ForeColor = Color.Green;
                         testGeoPanel?.SetResult(panelSummary);
+                        testGeoPanel?.MarkLastHistorySuccess(true);
                     }
                     else if (!insideResult && outsideResult)
                     {
