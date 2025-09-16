@@ -27,6 +27,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
         // Right-side Test Geography UI
         private Panel pnlTestGeoHost;
+        private Panel pnlLogHost;
         private TestGeographyPanel? testGeoPanel;
 
 // OSGeo4W selection + path UI
@@ -53,7 +54,8 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
         private void InitializeComponent()
         {
             this.Text = "GIS Boundary Import Tool for Parks & Rec";
-            this.Size = new Size(800, 700);
+            this.Size = new Size(1200, 900);
+            this.MinimumSize = new Size(1100, 800);
             this.StartPosition = FormStartPosition.CenterScreen;
 
             var mainPanel = new TableLayoutPanel
@@ -192,21 +194,17 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             mainPanel.Controls.Add(lblStatus, 0, 12);
             mainPanel.SetColumnSpan(lblStatus, 3);
 
-            progressBar = new ProgressBar { Width = 750, Height = 20 };
-            mainPanel.Controls.Add(progressBar, 0, 13);
-            mainPanel.SetColumnSpan(progressBar, 3);
+            progressBar = new ProgressBar { Height = 20 }; // will be hosted in a top panel to always remain visible
 
-            // Log output
+            // Log output (will be placed in a dedicated right column)
             txtLog = new TextBox
             {
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
-                Width = 750,
-                Height = 200,
-                Font = new Font("Consolas", 9)
+                Font = new Font("Consolas", 9),
+                Dock = DockStyle.Fill,
+                ReadOnly = true
             };
-            mainPanel.Controls.Add(txtLog, 0, 14);
-            mainPanel.SetColumnSpan(txtLog, 3);
 
             mainPanel.Controls.Add(lblTitle, 0, 0);
 
@@ -254,7 +252,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
 
             // Create right-side host for Test Geography panel (hidden by default)
-            pnlTestGeoHost = new Panel { Dock = DockStyle.Right, Width = 300, BorderStyle = BorderStyle.FixedSingle, Visible = false };
+            pnlTestGeoHost = new Panel { Dock = DockStyle.Right, Width = 360, BorderStyle = BorderStyle.FixedSingle, Visible = false, MinimumSize = new Size(320, 0) };
             pnlTestGeoHost.AutoScroll = true; // allow scrolling to reach the preview area
             testGeoPanel = new TestGeographyPanel();
             testGeoPanel.Dock = DockStyle.Fill; // fill host panel
@@ -269,9 +267,26 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             };
             pnlTestGeoHost.Controls.Add(testGeoPanel);
 
-            // Add panels to form (add host first so mainPanel fills remaining space)
-            this.Controls.Add(pnlTestGeoHost);
-            this.Controls.Add(mainPanel);
+            // Right-most Log panel (always visible)
+            pnlLogHost = new Panel { Dock = DockStyle.Right, Width = 340, BorderStyle = BorderStyle.FixedSingle };
+            var logLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
+            logLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            logLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            var lblLog = new Label { Text = "Log", AutoSize = true, Font = new Font("Segoe UI", 9, FontStyle.Bold), Margin = new Padding(4) };
+            logLayout.Controls.Add(lblLog, 0, 0);
+            logLayout.Controls.Add(txtLog, 0, 1);
+            pnlLogHost.Controls.Add(logLayout);
+
+            // Top Progress panel (always visible)
+            var pnlProgress = new Panel { Dock = DockStyle.Top, Height = 28 };
+            progressBar.Dock = DockStyle.Fill;
+            pnlProgress.Controls.Add(progressBar);
+
+            // Add panels to form (order matters): add test panel first, then log (outermost right), then main content, then top progress
+            this.Controls.Add(pnlTestGeoHost); // right-side test panel (left of log)
+            this.Controls.Add(pnlLogHost);     // rightmost log column
+            this.Controls.Add(mainPanel);      // fills remaining space
+            this.Controls.Add(pnlProgress);    // top progress bar
         }
         
         
@@ -711,15 +726,47 @@ private void BtnTestGeography_Click(object sender, EventArgs e)
     // Toggle the right-side Test Geography panel
     if (pnlTestGeoHost != null)
     {
-        pnlTestGeoHost.Visible = !pnlTestGeoHost.Visible;
-        if (pnlTestGeoHost.Visible)
+        bool show = !pnlTestGeoHost.Visible;
+        if (show)
         {
+            pnlTestGeoHost.Width = Math.Max(pnlTestGeoHost.Width, 400);
+            pnlTestGeoHost.Visible = true;
+            pnlTestGeoHost.BringToFront();
+
+            // Ensure the window is large enough to show the preview without clipping
+            var wa = Screen.FromControl(this).WorkingArea;
+            // Base minimums
+            int minW = 1300;
+            int minH = 1000;
+
+            // Try to size to fit the TestGeographyPanel preferred height so the preview is fully visible without scroll
+            int desiredClientH = this.ClientSize.Height;
+            try
+            {
+                if (testGeoPanel != null)
+                {
+                    var pref = testGeoPanel.PreferredSize;
+                    desiredClientH = Math.Max(pref.Height + 20, desiredClientH);
+                }
+            }
+            catch { /* ignore preferred size calc issues */ }
+
+            int chrome = this.Height - this.ClientSize.Height; // title bar + borders
+            int desiredH = Math.Max(minH, desiredClientH + chrome);
+            int desiredW = Math.Max(minW, this.Width);
+
+            this.Size = new Size(Math.Min(wa.Width, desiredW), Math.Min(wa.Height, desiredH));
+
+            // If still taller than screen, ensure the preview area is scrolled into view
+            try { testGeoPanel?.EnsurePreviewVisible(); } catch { }
+
             LogMessage("\n=== Test Geography Panel Opened ===");
             lblStatus.Text = "Enter coordinates and click Run Test";
             lblStatus.ForeColor = Color.Blue;
         }
         else
         {
+            pnlTestGeoHost.Visible = false;
             LogMessage("=== Test Geography Panel Hidden ===");
             lblStatus.Text = "Ready";
             lblStatus.ForeColor = Color.Green;

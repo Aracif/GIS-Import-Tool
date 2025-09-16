@@ -41,6 +41,7 @@ namespace GISBoundaryImporter
         private void BuildUi()
         {
             this.Dock = DockStyle.Fill;
+            this.AutoScroll = true;
 
             var layout = new TableLayoutPanel
             {
@@ -142,7 +143,7 @@ namespace GISBoundaryImporter
 
             // Boundary preview
             layout.Controls.Add(new Label { Text = "Boundary Preview:", AutoSize = true, Margin = new Padding(0, 6, 0, 0) }, 0, 14);
-            picBoundary = new PictureBox { Dock = DockStyle.Fill, Height = 180, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            picBoundary = new PictureBox { Dock = DockStyle.Top, Height = 320, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
             picBoundary.Paint += PicBoundary_Paint;
             layout.Controls.Add(picBoundary, 0, 15);
             layout.SetColumnSpan(picBoundary, 2);
@@ -523,6 +524,22 @@ namespace GISBoundaryImporter
         {
             lblResult.ForeColor = isError ? Color.Red : Color.DarkGreen;
             lblResult.Text = text;
+        }
+
+        // Ensure the boundary preview PictureBox is brought into view
+        public void EnsurePreviewVisible()
+        {
+            try
+            {
+                if (picBoundary != null)
+                {
+                    this.ScrollControlIntoView(picBoundary);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         public record CoordinatePair((double lat, double lon) Inside, (double lat, double lon) Outside)
