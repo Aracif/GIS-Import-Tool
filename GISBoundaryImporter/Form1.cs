@@ -24,6 +24,10 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
 
         private ProgressBar progressBar;
 
+        // Right-side Test Geography UI
+        private Panel pnlTestGeoHost;
+        private TestGeographyPanel? testGeoPanel;
+
 // OSGeo4W selection + path UI
         private RadioButton rdoOsgeo4w;
         private TextBox txtOgr2OgrPath;
@@ -241,6 +245,22 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             
 
 
+            // Create right-side host for Test Geography panel (hidden by default)
+            pnlTestGeoHost = new Panel { Dock = DockStyle.Right, Width = 300, BorderStyle = BorderStyle.FixedSingle, Visible = false };
+            testGeoPanel = new TestGeographyPanel();
+            // Wire event for test requests
+            testGeoPanel.TestRequested += async (s, args) => await HandleTestRequestedAsync(args);
+            testGeoPanel.HideRequested += (s, e) =>
+            {
+                pnlTestGeoHost.Visible = false;
+                LogMessage("=== Test Geography Panel Hidden ===");
+                lblStatus.Text = "Ready";
+                lblStatus.ForeColor = Color.Green;
+            };
+            pnlTestGeoHost.Controls.Add(testGeoPanel);
+
+            // Add panels to form (add host first so mainPanel fills remaining space)
+            this.Controls.Add(pnlTestGeoHost);
             this.Controls.Add(mainPanel);
         }
         
@@ -676,91 +696,24 @@ private void BtnStep1Import_Click(object? sender, EventArgs e)
             }
         }
 
-private async void BtnTestGeography_Click(object sender, EventArgs e)
+private void BtnTestGeography_Click(object sender, EventArgs e)
 {
-    if (!ValidateInputs()) return;
-    
-    LogMessage("\n=== Testing Geography ===");
-    lblStatus.Text = "Testing boundary...";
-    lblStatus.ForeColor = Color.Blue;
-
-    try
+    // Toggle the right-side Test Geography panel
+    if (pnlTestGeoHost != null)
     {
-        // Get test coordinates from user
-        string testCoordInside = Microsoft.VisualBasic.Interaction.InputBox(
-            "Enter coordinates INSIDE the boundary\n(Format: latitude,longitude)\nExample: 40.7580,-73.9855", 
-            "Test Inside Coordinates", "");
-
-        string testCoordOutside = Microsoft.VisualBasic.Interaction.InputBox(
-            "Enter coordinates OUTSIDE the boundary\n(Format: latitude,longitude)\nExample: 40.6892,-74.0445", 
-            "Test Outside Coordinates", "");
-
-        if (string.IsNullOrWhiteSpace(testCoordInside) || string.IsNullOrWhiteSpace(testCoordOutside))
+        pnlTestGeoHost.Visible = !pnlTestGeoHost.Visible;
+        if (pnlTestGeoHost.Visible)
         {
-            LogMessage("Test cancelled - no coordinates provided");
-            lblStatus.Text = "Test cancelled";
-            lblStatus.ForeColor = Color.Orange;
-            return;
+            LogMessage("\n=== Test Geography Panel Opened ===");
+            lblStatus.Text = "Enter coordinates and click Run Test";
+            lblStatus.ForeColor = Color.Blue;
         }
-
-        // Parse coordinates
-        var insideCoords = ParseCoordinates(testCoordInside);
-        var outsideCoords = ParseCoordinates(testCoordOutside);
-
-        if (insideCoords == null || outsideCoords == null)
+        else
         {
-            LogMessage("Invalid coordinate format. Use: latitude,longitude");
-            lblStatus.Text = "Invalid coordinates";
-            lblStatus.ForeColor = Color.Red;
-            return;
+            LogMessage("=== Test Geography Panel Hidden ===");
+            lblStatus.Text = "Ready";
+            lblStatus.ForeColor = Color.Green;
         }
-
-        LogMessage($"Testing INSIDE point: {insideCoords.Value.lat}, {insideCoords.Value.lon}");
-        LogMessage($"Testing OUTSIDE point: {outsideCoords.Value.lat}, {outsideCoords.Value.lon}");
-
-        // Test both points against the boundary
-        using (var conn = new SqlConnection(
-            $"Server={txtServerName.Text};Database={txtTargetDatabase.Text};" +
-            $"Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;"))
-        {
-            await conn.OpenAsync();
-
-            // Test "inside" point
-            bool insideResult = await TestPointInBoundary(conn, insideCoords.Value.lat, insideCoords.Value.lon);
-            LogMessage($"INSIDE point test result: {(insideResult ? "✓ Inside boundary (CORRECT)" : "✗ Outside boundary (INCORRECT)")}");
-
-            // Test "outside" point  
-            bool outsideResult = await TestPointInBoundary(conn, outsideCoords.Value.lat, outsideCoords.Value.lon);
-            LogMessage($"OUTSIDE point test result: {(outsideResult ? "✗ Inside boundary (INCORRECT)" : "✓ Outside boundary (CORRECT)")}");
-
-            // Evaluate results
-            if (insideResult && !outsideResult)
-            {
-                LogMessage("✓✓ BOUNDARY IS CORRECT! Both tests passed.");
-                lblStatus.Text = "Boundary test PASSED";
-                lblStatus.ForeColor = Color.Green;
-            }
-            else if (!insideResult && outsideResult)
-            {
-                LogMessage("⚠️ BOUNDARY IS INVERTED! Results are backwards.");
-                LogMessage("Fix: Select 'ReorientObject()' in Fix Option and re-run Step 2.");
-                lblStatus.Text = "Boundary INVERTED - needs ReorientObject()";
-                lblStatus.ForeColor = Color.Orange;
-                cboFixOption.SelectedIndex = 2; // Auto-select ReorientObject
-            }
-            else
-            {
-                LogMessage("✗ UNEXPECTED RESULTS - Check your boundary data or coordinates.");
-                lblStatus.Text = "Boundary test FAILED";
-                lblStatus.ForeColor = Color.Red;
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        LogMessage($"Error testing geography: {ex.Message}");
-        lblStatus.Text = "Test error";
-        lblStatus.ForeColor = Color.Red;
     }
 }
 
@@ -1026,6 +979,68 @@ END";
             txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}\r\n");
             txtLog.SelectionStart = txtLog.Text.Length;
             txtLog.ScrollToCaret();
+        }
+
+        private async Task HandleTestRequestedAsync(TestRequestedEventArgs args)
+        {
+            try
+            {
+                if (!ValidateInputs())
+                {
+                    testGeoPanel?.SetResult("Please fill required inputs (Server, Tenant ID) first.", isError: true);
+                    return;
+                }
+
+                LogMessage($"\n=== Testing Geography ===");
+                lblStatus.Text = "Testing boundary...";
+                lblStatus.ForeColor = Color.Blue;
+
+                using (var conn = new SqlConnection(
+                           $"Server={txtServerName.Text};Database={txtTargetDatabase.Text};" +
+                           $"Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;"))
+                {
+                    await conn.OpenAsync();
+
+                    // Test inside
+                    bool insideResult = await TestPointInBoundary(conn, args.Inside.lat, args.Inside.lon);
+                    LogMessage($"INSIDE point {args.Inside.lat},{args.Inside.lon}: {(insideResult ? "✓ Inside (CORRECT)" : "✗ Outside (INCORRECT)")}");
+
+                    // Test outside
+                    bool outsideResult = await TestPointInBoundary(conn, args.Outside.lat, args.Outside.lon);
+                    LogMessage($"OUTSIDE point {args.Outside.lat},{args.Outside.lon}: {(outsideResult ? "✗ Inside (INCORRECT)" : "✓ Outside (CORRECT)")}");
+
+                    string panelSummary;
+                    if (insideResult && !outsideResult)
+                    {
+                        panelSummary = "Boundary test PASSED";
+                        lblStatus.Text = panelSummary;
+                        lblStatus.ForeColor = Color.Green;
+                        testGeoPanel?.SetResult(panelSummary);
+                    }
+                    else if (!insideResult && outsideResult)
+                    {
+                        panelSummary = "Boundary INVERTED - try ReorientObject()";
+                        lblStatus.Text = panelSummary;
+                        lblStatus.ForeColor = Color.Orange;
+                        cboFixOption.SelectedIndex = 2;
+                        testGeoPanel?.SetResult(panelSummary, isError: true);
+                    }
+                    else
+                    {
+                        panelSummary = "Boundary test FAILED - check data/coordinates";
+                        lblStatus.Text = panelSummary;
+                        lblStatus.ForeColor = Color.Red;
+                        testGeoPanel?.SetResult(panelSummary, isError: true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error testing geography: {ex.Message}");
+                lblStatus.Text = "Test error";
+                lblStatus.ForeColor = Color.Red;
+                testGeoPanel?.SetResult($"Error: {ex.Message}", isError: true);
+            }
         }
     }
 }
