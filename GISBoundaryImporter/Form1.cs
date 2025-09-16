@@ -18,6 +18,7 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
         private Button btnStep2Transfer;
         private Button btnTestGeography;
         private Button btnExportWKT;
+        private Button btnViewDocs;
         private ComboBox cboFixOption;
         private Label lblStatus;
         private Button btnTestDb;
@@ -174,6 +175,13 @@ namespace GISBoundaryImporter // Change this to match your project namespace if 
             btnExportWKT.FlatStyle = FlatStyle.System;
             btnExportWKT.Click += BtnExportWKT_Click;
             toolsPanel.Controls.Add(btnExportWKT);
+
+            btnViewDocs = new Button { Text = "View Docs" };
+            btnViewDocs.Size = uniformButtonSize;
+            btnViewDocs.Margin = uniformButtonMargin;
+            btnViewDocs.FlatStyle = FlatStyle.System;
+            btnViewDocs.Click += BtnViewDocs_Click;
+            toolsPanel.Controls.Add(btnViewDocs);
 
             gbTools.Controls.Add(toolsPanel);
             mainPanel.Controls.Add(gbTools, 0, 11);
@@ -1084,6 +1092,107 @@ END";
                 lblStatus.Text = "Test error";
                 lblStatus.ForeColor = Color.Red;
                 testGeoPanel?.SetResult($"Error: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void BtnViewDocs_Click(object? sender, EventArgs e)
+        {
+            string? tempPath = null;
+            try
+            {
+                // Extract embedded HTML resource to a temp file
+                string tempDir = Path.Combine(Path.GetTempPath(), "GISBoundaryImporterDocs");
+                Directory.CreateDirectory(tempDir);
+                tempPath = Path.Combine(tempDir, "GIS Boundary Import Guide.html");
+
+                using var stream = typeof(Form1).Assembly.GetManifestResourceStream("Docs.Guide.html");
+                if (stream == null)
+                {
+                    MessageBox.Show(this, "Embedded documentation not found in the application.", "Docs",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+                {
+                    stream.CopyTo(fs);
+                }
+
+                // Show inside the app using modern Edge WebView2 if available
+                var frm = new Form
+                {
+                    Text = "Documentation — GIS Boundary Import Guide",
+                    StartPosition = FormStartPosition.CenterParent,
+                    Size = new Size(1000, 750)
+                };
+
+                try
+                {
+                    var webView = new Microsoft.Web.WebView2.WinForms.WebView2
+                    {
+                        Dock = DockStyle.Fill
+                    };
+                    frm.Controls.Add(webView);
+
+                    // Initialize WebView2 and navigate to the local file
+                    frm.Shown += async (s, _) =>
+                    {
+                        try
+                        {
+                            await webView.EnsureCoreWebView2Async(null);
+                            webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                            webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                            webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                            webView.Source = new Uri(tempPath);
+                        }
+                        catch
+                        {
+                            // If WebView2 initialization fails (e.g., runtime missing), fallback to default browser
+                            try { Process.Start(new ProcessStartInfo { FileName = tempPath, UseShellExecute = true }); }
+                            catch { /* ignore */ }
+                            frm.Close();
+                        }
+                    };
+                }
+                catch
+                {
+                    // Fallback: legacy WebBrowser inside the form
+                    var browser = new WebBrowser
+                    {
+                        Dock = DockStyle.Fill,
+                        AllowWebBrowserDrop = false,
+                        IsWebBrowserContextMenuEnabled = true,
+                        ScriptErrorsSuppressed = true
+                    };
+                    frm.Controls.Add(browser);
+                    frm.Shown += (s, _) => browser.Navigate(tempPath);
+                }
+
+                frm.ShowDialog(this);
+            }
+            catch (Exception ex)
+            {
+                // Fallback: try opening in the default browser
+                try
+                {
+                    if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = tempPath,
+                            UseShellExecute = true
+                        });
+                    }
+                    else
+                    {
+                        MessageBox.Show(this, "Unable to open documentation: " + ex.Message, "Docs",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                catch
+                {
+                    MessageBox.Show(this, "Unable to open documentation: " + ex.Message, "Docs",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
     }
