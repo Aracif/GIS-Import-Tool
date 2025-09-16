@@ -14,6 +14,8 @@ namespace GISBoundaryImporter
         private TextBox txtOutsideLon;
         private TextBox txtInsidePair;
         private TextBox txtOutsidePair;
+        private Button btnPasteInsidePair;
+        private Button btnPasteOutsidePair;
         private CheckBox chkSingleField;
         private Button btnRunTest;
         private Button btnHide;
@@ -80,17 +82,36 @@ namespace GISBoundaryImporter
 
             // Option: single-field lat,lon inputs
             chkSingleField = new CheckBox { Text = "Use single input (lat,lon)", AutoSize = true };
+            chkSingleField.CheckedChanged += (s, e) => ToggleInputMode();
             layout.Controls.Add(chkSingleField, 0, 6);
             layout.SetColumnSpan(chkSingleField, 2);
 
             // Inside/Outside combined inputs
             layout.Controls.Add(new Label { Text = "Inside (lat,lon):", AutoSize = true }, 0, 7);
             txtInsidePair = new TextBox { Width = 180, PlaceholderText = "40.7580,-73.9855" };
-            layout.Controls.Add(txtInsidePair, 1, 7);
+            btnPasteInsidePair = new Button { Text = "Paste", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+            btnPasteInsidePair.Click += (s, e) =>
+            {
+                try { txtInsidePair.Text = (Clipboard.GetText() ?? string.Empty).Trim(); }
+                catch { /* ignore clipboard exceptions */ }
+            };
+            var insidePairPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0) };
+            insidePairPanel.Controls.Add(txtInsidePair);
+            insidePairPanel.Controls.Add(btnPasteInsidePair);
+            layout.Controls.Add(insidePairPanel, 1, 7);
 
             layout.Controls.Add(new Label { Text = "Outside (lat,lon):", AutoSize = true }, 0, 8);
             txtOutsidePair = new TextBox { Width = 180, PlaceholderText = "40.6892,-74.0445" };
-            layout.Controls.Add(txtOutsidePair, 1, 8);
+            btnPasteOutsidePair = new Button { Text = "Paste", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+            btnPasteOutsidePair.Click += (s, e) =>
+            {
+                try { txtOutsidePair.Text = (Clipboard.GetText() ?? string.Empty).Trim(); }
+                catch { /* ignore clipboard exceptions */ }
+            };
+            var outsidePairPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0) };
+            outsidePairPanel.Controls.Add(txtOutsidePair);
+            outsidePairPanel.Controls.Add(btnPasteOutsidePair);
+            layout.Controls.Add(outsidePairPanel, 1, 8);
 
             // Hide button
             btnHide = new Button { Text = "Hide Panel", AutoSize = true };
@@ -114,6 +135,27 @@ namespace GISBoundaryImporter
             layout.Controls.Add(btnUseSelected, 1, 13);
 
             this.Controls.Add(layout);
+
+            // Initialize input mode (default: separate fields enabled)
+            chkSingleField.Checked = false;
+            ToggleInputMode();
+        }
+
+        private void ToggleInputMode()
+        {
+            bool single = chkSingleField.Checked;
+
+            // When using single input, disable double inputs
+            txtInsideLat.Enabled = !single;
+            txtInsideLon.Enabled = !single;
+            txtOutsideLat.Enabled = !single;
+            txtOutsideLon.Enabled = !single;
+
+            // Enable/disable single input and paste buttons accordingly
+            txtInsidePair.Enabled = single;
+            txtOutsidePair.Enabled = single;
+            if (btnPasteInsidePair != null) btnPasteInsidePair.Enabled = single;
+            if (btnPasteOutsidePair != null) btnPasteOutsidePair.Enabled = single;
         }
 
         private void OnRunTest()
